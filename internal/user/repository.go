@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dksensei/letsnormalizeit/internal/db"
+	"github.com/dksensei/letsnormalizeit/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -27,10 +28,10 @@ func NewRepository(mongodb *db.MongoDB) *Repository {
 }
 
 // FindByID finds a user by ID
-func (r *Repository) FindByID(ctx context.Context, id string) (*User, error) {
+func (r *Repository) FindByID(ctx context.Context, id string) (*model.User, error) {
 	coll := r.db.GetCollection(r.collection)
 
-	var user User
+	var user model.User
 	err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	if err != nil {
 		return nil, err
@@ -40,10 +41,10 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*User, error) {
 }
 
 // FindByEmail finds a user by email
-func (r *Repository) FindByEmail(ctx context.Context, email string) (*User, error) {
+func (r *Repository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	coll := r.db.GetCollection(r.collection)
 
-	var user User
+	var user model.User
 	err := coll.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
 		return nil, err
@@ -53,7 +54,7 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (*User, erro
 }
 
 // Create creates a new user
-func (r *Repository) Create(ctx context.Context, user *User) error {
+func (r *Repository) Create(ctx context.Context, user *model.User) error {
 	coll := r.db.GetCollection(r.collection)
 
 	// Check if user already exists
@@ -70,7 +71,7 @@ func (r *Repository) Create(ctx context.Context, user *User) error {
 }
 
 // Update updates an existing user
-func (r *Repository) Update(ctx context.Context, user *User) error {
+func (r *Repository) Update(ctx context.Context, user *model.User) error {
 	coll := r.db.GetCollection(r.collection)
 
 	user.UpdatedAt = time.Now()

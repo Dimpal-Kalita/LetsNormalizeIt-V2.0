@@ -14,8 +14,16 @@ func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				// Log the error and stack trace
-				utils.Error("Panic recovered: %v\nStack trace: %s", err, debug.Stack())
+				// Create a logger with request context
+				logger := utils.With(
+					"path", c.Request.URL.Path,
+					"method", c.Request.Method,
+					"clientIP", c.ClientIP(),
+					"userAgent", c.Request.UserAgent(),
+				)
+
+				// Log the error and stack trace with context
+				logger.Error("Panic recovered: %v\nStack trace: %s", err, debug.Stack())
 
 				// Return an error response
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,9 +39,17 @@ func (rl *RateLimiter) RateLimit() gin.HandlerFunc {
 		// Get client identifier (IP address or user ID if authenticated)
 		clientID := c.ClientIP()
 
+		// Create logger with request context
+		logger := utils.NewLogContext(
+			"path", c.Request.URL.Path,
+			"method", c.Request.Method,
+			"clientIP", clientID,
+		)
+
 		// If user is authenticated, use user ID instead
 		if uid, exists := c.Get("uid"); exists {
 			clientID = uid.(string)
+			logger = logger.With("userID", clientID)
 		}
 
 		allow := func() bool {
@@ -61,6 +70,8 @@ func (rl *RateLimiter) RateLimit() gin.HandlerFunc {
 
 			// If client has exceeded the limit, reject the request
 			if client.count >= rl.limit {
+				logger.Warn("Rate limit exceeded by client: %s (count: %d, limit: %d)",
+					clientID, client.count, rl.limit)
 				return false
 			}
 
@@ -89,13 +100,21 @@ func (rl *RateLimiter) Cleanup(interval time.Duration) {
 		for range ticker.C {
 			rl.mu.Lock()
 			now := time.Now()
+			cleanedCount := 0
 			for clientID, client := range rl.clients {
 				// Remove clients that haven't been seen in a while
 				if now.Sub(client.lastSeen) > rl.window*2 {
 					delete(rl.clients, clientID)
+					cleanedCount++
 				}
 			}
+			totalClients := len(rl.clients)
 			rl.mu.Unlock()
+
+			if cleanedCount > 0 {
+				utils.Info("Rate limiter cleanup: removed %d stale clients, %d remaining",
+					cleanedCount, totalClients)
+			}
 		}
 	}()
 }

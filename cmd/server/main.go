@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +14,7 @@ import (
 	"github.com/dksensei/letsnormalizeit/internal/db"
 	"github.com/dksensei/letsnormalizeit/internal/middleware"
 	"github.com/dksensei/letsnormalizeit/internal/user"
+	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -23,23 +23,37 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Initialize logger with configuration
+	loggerConfig := map[string]interface{}{
+		"level":              cfg.Logger.Level,
+		"encoding":           cfg.Logger.Encoding,
+		"output_paths":       cfg.Logger.OutputPaths,
+		"error_output_paths": cfg.Logger.ErrorOutputPaths,
+	}
+	utils.InitWithConfig(loggerConfig)
+	defer utils.Sync()
+
+	// Log startup message
+	utils.Info("Starting LetsNormalizeIt-V2.0 server")
+	utils.Info("Configuration loaded successfully")
+
 	// Initialize Firebase Auth service
 	authService, err := auth.NewService(&cfg.Firebase)
 	if err != nil {
-		log.Fatalf("Failed to initialize Firebase Auth: %v", err)
+		utils.Fatal("Failed to initialize Firebase Auth: %v", err)
 	}
 
 	// Initialize MongoDB connection
 	mongodb, err := db.NewMongoDB(&cfg.MongoDB)
 	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
+		utils.Fatal("Failed to connect to MongoDB: %v", err)
 	}
 	defer mongodb.Close(context.Background())
 
 	// Initialize Redis connection
 	redis, err := db.NewRedis(&cfg.Redis)
 	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		utils.Fatal("Failed to connect to Redis: %v", err)
 	}
 	defer redis.Close()
 
@@ -232,24 +246,24 @@ func main() {
 	// Start the server in a goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			utils.Fatal("Failed to start server: %v", err)
 		}
 	}()
 
-	log.Printf("Server running on port %s", cfg.Server.Port)
+	utils.Info("Server running on port %s", cfg.Server.Port)
 
 	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	utils.Info("Shutting down server...")
 
 	// Create a deadline context for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		utils.Fatal("Server forced to shutdown: %v", err)
 	}
 
-	log.Println("Server exited")
+	utils.Info("Server exited")
 }

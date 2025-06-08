@@ -4,18 +4,22 @@ import (
 	"context"
 	"errors"
 
-	"github.com/dksensei/letsnormalizeit/internal/auth"
+	"github.com/dksensei/letsnormalizeit/internal/model"
+	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Service handles user-related business logic
 type Service struct {
 	repo        *Repository
-	authService *auth.Service
+	authService model.AuthService
 }
 
+// Ensure Service implements model.UserService
+var _ model.UserService = (*Service)(nil)
+
 // NewService creates a new user service
-func NewService(repo *Repository, authService *auth.Service) *Service {
+func NewService(repo *Repository, authService model.AuthService) *Service {
 	return &Service{
 		repo:        repo,
 		authService: authService,
@@ -23,20 +27,27 @@ func NewService(repo *Repository, authService *auth.Service) *Service {
 }
 
 // GetUserByID gets a user by ID
-func (s *Service) GetUserByID(ctx context.Context, id string) (*User, error) {
+func (s *Service) GetUserByID(ctx context.Context, id string) (*model.User, error) {
+	logger := utils.NewLogContext("userID", id, "operation", "GetUserByID")
+
 	// Try to get from database first
+	logger.Debug("Attempting to find user in database")
 	user, err := s.repo.FindByID(ctx, id)
 	if err == nil {
+		logger.Debug("User found in database")
 		return user, nil
 	}
 
 	// If not found in database, try to get from Firebase
+	logger.Debug("User not found in database, trying Firebase")
 	firebaseUser, err := s.authService.GetUser(ctx, id)
 	if err != nil {
+		logger.Error("Failed to get user from Firebase: %v", err)
 		return nil, err
 	}
 
 	// Create a new user in the database
+	logger.Info("Creating new user record from Firebase data")
 	newUser := NewUser(
 		firebaseUser.UID,
 		firebaseUser.DisplayName,
@@ -45,41 +56,39 @@ func (s *Service) GetUserByID(ctx context.Context, id string) (*User, error) {
 	)
 
 	if err := s.repo.Create(ctx, newUser); err != nil {
+		logger.Error("Failed to create user in database: %v", err)
 		return nil, err
 	}
 
+	logger.Info("User successfully created in database")
 	return newUser, nil
 }
 
-// CreateUser creates a new user
-func (s *Service) CreateUser(ctx context.Context, email, password, name string) (*User, error) {
-	// Create the user in Firebase first
-	firebaseUser, err := s.authService.CreateUser(ctx, email, password)
-	if err != nil {
-		return nil, err
-	}
+// StoreUser stores a user in the database
+func (s *Service) StoreUser(ctx context.Context, user *model.User) (*model.User, error) {
+	logger := utils.NewLogContext("userID", user.ID, "operation", "StoreUser")
 
-	// Update display name
-	if name != "" {
-		firebaseUser, err = s.authService.UpdateUser(ctx, firebaseUser.UID, name)
-		if err != nil {
-			// This is not critical, we can continue
-			// But we should log this error in a real application
+	// Check if user already exists
+	existingUser, err := s.repo.FindByID(ctx, user.ID)
+	if err == nil {
+		// User exists, update the user
+		logger.Debug("User exists, updating user")
+		existingUser.Name = user.Name
+		existingUser.Email = user.Email
+		existingUser.PhotoURL = user.PhotoURL
+
+		if err := s.repo.Update(ctx, existingUser); err != nil {
+			logger.Error("Failed to update user in database: %v", err)
+			return nil, err
 		}
+
+		return existingUser, nil
 	}
 
-	// Create user in the database
-	user := NewUser(
-		firebaseUser.UID,
-		name,
-		email,
-		firebaseUser.PhotoURL,
-	)
-
+	// User doesn't exist, create a new one
+	logger.Debug("User doesn't exist, creating new user")
 	if err := s.repo.Create(ctx, user); err != nil {
-		// If we fail to create the user in the database,
-		// we should delete the user from Firebase
-		// But for simplicity, we'll just return the error
+		logger.Error("Failed to create user in database: %v", err)
 		return nil, err
 	}
 
@@ -87,13 +96,7 @@ func (s *Service) CreateUser(ctx context.Context, email, password, name string) 
 }
 
 // UpdateUserProfile updates a user's profile
-func (s *Service) UpdateUserProfile(ctx context.Context, id, name string) (*User, error) {
-	// Update user in Firebase
-	_, err := s.authService.UpdateUser(ctx, id, name)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *Service) UpdateUserProfile(ctx context.Context, id, name string) (*model.User, error) {
 	// Get current user from database
 	user, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -171,4 +174,9 @@ func (s *Service) ToggleLike(ctx context.Context, userID, blogID string) error {
 
 	// Add the like
 	return s.repo.AddLike(ctx, userID, objID)
+}
+
+// NewUser creates a new user from Firebase user information
+func NewUser(id, name, email, photoURL string) *model.User {
+	return model.NewUser(id, name, email, photoURL)
 }

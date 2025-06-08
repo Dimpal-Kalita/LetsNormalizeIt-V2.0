@@ -1,10 +1,10 @@
 package config
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"github.com/spf13/viper"
 )
 
@@ -14,6 +14,7 @@ type Config struct {
 	Firebase FirebaseConfig `mapstructure:"firebase"`
 	MongoDB  MongoDBConfig  `mapstructure:"mongodb"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	Logger   LoggerConfig   `mapstructure:"logger"`
 }
 
 // ServerConfig holds server-specific configuration
@@ -41,6 +42,14 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
+// LoggerConfig holds logger-specific configuration
+type LoggerConfig struct {
+	Level            string   `mapstructure:"level"`
+	Encoding         string   `mapstructure:"encoding"`
+	OutputPaths      []string `mapstructure:"output_paths"`
+	ErrorOutputPaths []string `mapstructure:"error_output_paths"`
+}
+
 // Load loads the configuration from files and environment variables
 func Load() *Config {
 	// Set default configuration file path
@@ -63,12 +72,18 @@ func Load() *Config {
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 
+	// Logger defaults
+	viper.SetDefault("logger.level", "info")
+	viper.SetDefault("logger.encoding", "json")
+	viper.SetDefault("logger.output_paths", []string{"stdout"})
+	viper.SetDefault("logger.error_output_paths", []string{"stderr"})
+
 	// Read the config file
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("Config file not found, using defaults and environment variables")
+			utils.Warn("Config file not found, using defaults and environment variables")
 		} else {
-			log.Fatalf("Error reading config file: %s", err)
+			utils.Fatal("Error reading config file: %s", err)
 		}
 	}
 
@@ -78,7 +93,7 @@ func Load() *Config {
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("Error unmarshalling config: %s", err)
+		utils.Fatal("Error unmarshalling config: %s", err)
 	}
 
 	// Resolve absolute path for Firebase credentials

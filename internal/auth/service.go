@@ -7,8 +7,9 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
-	// Remove any unnecessary or circular imports here.
+
 	"github.com/dksensei/letsnormalizeit/internal/config"
+	"github.com/dksensei/letsnormalizeit/internal/model"
 	"google.golang.org/api/option"
 )
 
@@ -16,6 +17,9 @@ import (
 type Service struct {
 	client *auth.Client
 }
+
+// Ensure Service implements model.AuthService
+var _ model.AuthService = (*Service)(nil)
 
 // NewService creates a new instance of the Firebase auth service
 func NewService(config *config.FirebaseConfig) (*Service, error) {
@@ -55,32 +59,4 @@ func (s *Service) VerifyToken(ctx context.Context, idToken string) (*auth.Token,
 // GetUser gets a user by their UID
 func (s *Service) GetUser(ctx context.Context, uid string) (*auth.UserRecord, error) {
 	return s.client.GetUser(ctx, uid)
-}
-
-// GetUserByEmail gets a user by their email address
-func (s *Service) GetUserByEmail(ctx context.Context, email string) (*auth.UserRecord, error) {
-	return s.client.GetUserByEmail(ctx, email)
-}
-
-// CreateUser creates a new user with the provided email and password
-func (s *Service) CreateUser(ctx context.Context, email, password string) (*auth.UserRecord, error) {
-	params := (&auth.UserToCreate{}).
-		Email(email).
-		Password(password).
-		EmailVerified(false)
-
-	return s.client.CreateUser(ctx, params)
-}
-
-// UpdateUser updates a user's information
-func (s *Service) UpdateUser(ctx context.Context, uid string, displayName string) (*auth.UserRecord, error) {
-	params := (&auth.UserToUpdate{}).
-		DisplayName(displayName)
-
-	return s.client.UpdateUser(ctx, uid, params)
-}
-
-// DeleteUser deletes a user by their UID
-func (s *Service) DeleteUser(ctx context.Context, uid string) error {
-	return s.client.DeleteUser(ctx, uid)
 }

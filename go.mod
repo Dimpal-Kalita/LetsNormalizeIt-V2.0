@@ -11,6 +11,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/spf13/viper v1.20.1
 	go.mongodb.org/mongo-driver v1.17.4
+	go.uber.org/zap v1.27.0
 	google.golang.org/api v0.236.0
 )
 
@@ -89,8 +90,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
-	go.uber.org/atomic v1.9.0 // indirect
-	go.uber.org/multierr v1.9.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect

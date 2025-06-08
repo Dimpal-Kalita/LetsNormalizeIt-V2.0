@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dksensei/letsnormalizeit/internal/auth"
+	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,16 +18,23 @@ const UserIDKey contextKey = "userID"
 // AuthMiddleware creates a middleware for authenticating requests
 func AuthMiddleware(authService *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := utils.NewLogContext(
+			"path", c.Request.URL.Path,
+			"method", c.Request.Method,
+			"clientIP", c.ClientIP(),
+		)
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			logger.Warn("Request missing Authorization header")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
 			return
 		}
-
 		// Extract the token from the Authorization header
 		// Format: Bearer <token>
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			logger.Warn("Invalid Authorization header format")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer <token>"})
 			return
 		}
@@ -34,15 +42,18 @@ func AuthMiddleware(authService *auth.Service) gin.HandlerFunc {
 		idToken := parts[1]
 		token, err := authService.VerifyToken(c.Request.Context(), idToken)
 		if err != nil {
+			logger.Warn("Token verification failed: %v", err)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			return
 		}
-
 		// Set user ID in the context
 		c.Set("uid", token.UID)
 		// Add user data to the request context for potential usage in services
 		ctx := context.WithValue(c.Request.Context(), UserIDKey, token.UID)
 		c.Request = c.Request.WithContext(ctx)
+
+		// Update logger with user information
+		logger.With("userID", token.UID).Info("User authenticated successfully")
 
 		c.Next()
 	}

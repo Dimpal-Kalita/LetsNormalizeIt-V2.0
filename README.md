@@ -33,12 +33,39 @@ This application follows a clean architecture approach with the following compon
 
 1. Clone the repository
 2. Place your Firebase credentials file in the root directory as `firebase-credentials.json`
-3. Configure the application in `configs/config.yaml`
-4. Run the application:
+3. Copy the environment variables template:
+   ```bash
+   cp .env.example .env
+   ```
+4. Update the `.env` file with your configuration:
+   - Set your MongoDB connection string in `LNI_MONGODB_URI`
+   - Update Firebase project ID in `LNI_FIREBASE_PROJECT_ID`
+   - Configure Redis connection details
+   - Adjust other settings as needed
+5. Run the application:
+   ```bash
+   go run cmd/server/main.go
+   ```
 
-```bash
-go run cmd/server/main.go
-```
+## Configuration
+
+The application uses a hybrid configuration approach:
+- Environment variables (loaded from `.env` file) take precedence
+- YAML configuration file (`configs/config.yaml`) as fallback
+- Built-in defaults for missing values
+
+### Environment Variables
+
+All environment variables use the `LNI_` prefix. Key variables include:
+
+- `LNI_SERVER_PORT`: Server port (default: 8080)
+- `LNI_MONGODB_URI`: MongoDB connection string
+- `LNI_MONGODB_DATABASE`: MongoDB database name
+- `LNI_REDIS_ADDRESS`: Redis server address
+- `LNI_FIREBASE_CREDENTIALS_FILE`: Path to Firebase credentials file
+- `LNI_FIREBASE_PROJECT_ID`: Firebase project ID
+
+See `.env.example` for all available configuration options.
 
 ## API Endpoints
 

@@ -1,4 +1,18 @@
-.PHONY: build run test clean tidy
+.PHONY: build run test clean tidy setup env-setup
+
+# Setup project for first time
+setup: env-setup tidy
+	@echo "Project setup complete!"
+
+# Setup environment file
+env-setup:
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		echo "Created .env file from .env.example"; \
+		echo "Please update .env with your configuration"; \
+	else \
+		echo ".env file already exists"; \
+	fi
 
 # Default build target
 build:

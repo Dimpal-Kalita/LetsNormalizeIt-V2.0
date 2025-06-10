@@ -34,8 +34,14 @@ clean:
 tidy:
 	go mod tidy
 
-# Build and run
-dev: tidy build run
+# Development with hot reload using air
+dev:
+	@echo "Starting development server with hot reload..."
+	@mkdir -p tmp
+	air
+
+# Build and run (legacy)
+build-run: tidy build run
 
 # Build for production
 prod: tidy

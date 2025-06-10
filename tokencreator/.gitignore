@@ -30,12 +30,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-*.swo
-
-# Go build artifacts
-bin/
-tmp/
-build-errors.log
-
-# Air (hot reload) temporary files
-air_tmp/
+*.swo 

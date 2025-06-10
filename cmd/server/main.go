@@ -64,7 +64,7 @@ func main() {
 	userService := user.NewService(userRepo, authService)
 
 	// Initialize handlers
-	authHandler := auth.NewHandler(authService, userService)
+	userHandler := user.NewHandler(userService)
 
 	// Initialize rate limiter
 	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
@@ -91,8 +91,14 @@ func main() {
 	// Apply rate limiting to all routes
 	router.Use(rateLimiter.RateLimit())
 
-	// Register auth routes
-	authHandler.Register(router)
+	// User authentication routes (requires authentication middleware)
+	userAuth := router.Group("/api/v1/user")
+	userAuth.Use(middleware.AuthMiddleware(authService))
+	{
+		userAuth.POST("/login", userHandler.Login)
+		userAuth.POST("/login-or-register", userHandler.LoginWithAutoRegister)
+		userAuth.POST("/register", userHandler.RegisterUser)
+	}
 
 	// Public routes
 	public := router.Group("/api/v1")

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Auth Test</title>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <h2>Firebase Auth Token Generator</h2>
+    
+    <div id="auth-container">
+        <h3>Login</h3>
+        <input type="email" id="email" placeholder="Email" value="test@example.com">
+        <input type="password" id="password" placeholder="Password" value="password123">
+        <button onclick="signIn()">Sign In</button>
+        <button onclick="signUp()">Sign Up</button>
+        <button onclick="signOut()">Sign Out</button>
+    </div>
+
+    <div id="token-container" style="display:none;">
+        <h3>ID Token (Copy this for testing)</h3>
+        <textarea id="token-display" rows="10" cols="80" readonly></textarea>
+        <button onclick="copyToken()">Copy Token</button>
+        <button onclick="refreshToken()">Refresh Token</button>
+    </div>
+
+    <div id="user-info" style="display:none;">
+        <h3>User Info</h3>
+        <div id="user-details"></div>
+    </div>
+
+    <script>
+        // Replace with your Firebase config
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        // Auth state observer
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                console.log('User signed in:', user);
+                displayUserInfo(user);
+                getAndDisplayToken(user);
+            } else {
+                console.log('User signed out');
+                document.getElementById('token-container').style.display = 'none';
+                document.getElementById('user-info').style.display = 'none';
+            }
+        });
+
+        async function signUp() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                console.log('User created:', userCredential.user);
+            } catch (error) {
+                console.error('Error signing up:', error);
+                alert('Error signing up: ' + error.message);
+            }
+        }
+
+        async function signIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                console.log('User signed in:', userCredential.user);
+            } catch (error) {
+                console.error('Error signing in:', error);
+                alert('Error signing in: ' + error.message);
+            }
+        }
+
+        async function signOut() {
+            try {
+                await auth.signOut();
+                console.log('User signed out');
+            } catch (error) {
+                console.error('Error signing out:', error);
+            }
+        }
+
+        async function getAndDisplayToken(user) {
+            try {
+                const token = await user.getIdToken();
+                document.getElementById('token-display').value = token;
+                document.getElementById('token-container').style.display = 'block';
+                console.log('ID Token:', token);
+            } catch (error) {
+                console.error('Error getting token:', error);
+            }
+        }
+
+        async function refreshToken() {
+            const user = auth.currentUser;
+            if (user) {
+                try {
+                    const token = await user.getIdToken(true); // Force refresh
+                    document.getElementById('token-display').value = token;
+                    console.log('Token refreshed:', token);
+                } catch (error) {
+                    console.error('Error refreshing token:', error);
+                }
+            }
+        }
+
+        function copyToken() {
+            const tokenTextarea = document.getElementById('token-display');
+            tokenTextarea.select();
+            document.execCommand('copy');
+            alert('Token copied to clipboard!');
+        }
+
+        function displayUserInfo(user) {
+            const userDetails = document.getElementById('user-details');
+            userDetails.innerHTML = `
+                <p><strong>UID:</strong> ${user.uid}</p>
+                <p><strong>Email:</strong> ${user.email}</p>
+                <p><strong>Display Name:</strong> ${user.displayName || 'Not set'}</p>
+                <p><strong>Email Verified:</strong> ${user.emailVerified}</p>
+            `;
+            document.getElementById('user-info').style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

@@ -50,12 +50,12 @@ func main() {
 	}
 	defer mongodb.Close(context.Background())
 
-	// Initialize Redis connection
-	redis, err := db.NewRedis(&cfg.Redis)
-	if err != nil {
-		utils.Fatal("Failed to connect to Redis: %v", err)
-	}
-	defer redis.Close()
+	// // Initialize Redis connection
+	// redis, err := db.NewRedis(&cfg.Redis)
+	// if err != nil {
+	// 	utils.Fatal("Failed to connect to Redis: %v", err)
+	// }
+	// defer redis.Close()
 
 	// Initialize repositories
 	userRepo := user.NewRepository(mongodb)

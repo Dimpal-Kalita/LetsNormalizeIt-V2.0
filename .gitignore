@@ -39,3 +39,4 @@ build-errors.log
 
 # Air (hot reload) temporary files
 air_tmp/
+test/auth/get_token.go

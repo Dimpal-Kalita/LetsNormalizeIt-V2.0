@@ -1,0 +1,68 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - LNI_SERVER_PORT=8080
+      - LNI_MONGODB_URI=mongodb://mongodb:27017
+      - LNI_MONGODB_DATABASE=letsnormalizeit
+      - LNI_REDIS_ADDRESS=redis:6379
+      - LNI_AUTH_TYPE=jwt
+      - LNI_JWT_SECRET=your-secret-key-change-in-production
+      - LNI_JWT_EXPIRY=24h
+      - LNI_CACHE_ENABLED=true
+      - LNI_LOGGER_LEVEL=info
+      - LNI_LOGGER_ENCODING=json
+    networks:
+      - lni-network
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=letsnormalizeit
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - lni-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lni-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  lni-network:
+    driver: bridge

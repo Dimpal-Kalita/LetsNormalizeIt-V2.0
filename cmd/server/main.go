@@ -10,20 +10,19 @@ import (
 	"time"
 
 	"github.com/dksensei/letsnormalizeit/internal/auth"
+	"github.com/dksensei/letsnormalizeit/internal/cache"
 	"github.com/dksensei/letsnormalizeit/internal/config"
 	"github.com/dksensei/letsnormalizeit/internal/db"
+	"github.com/dksensei/letsnormalizeit/internal/features/user"
 	"github.com/dksensei/letsnormalizeit/internal/middleware"
-	"github.com/dksensei/letsnormalizeit/internal/user"
 	"github.com/dksensei/letsnormalizeit/internal/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// Load configuration
 	cfg := config.Load()
 
-	// Initialize logger with configuration
 	loggerConfig := map[string]interface{}{
 		"level":              cfg.Logger.Level,
 		"encoding":           cfg.Logger.Encoding,
@@ -33,54 +32,61 @@ func main() {
 	utils.InitWithConfig(loggerConfig)
 	defer utils.Sync()
 
-	// Log startup message
 	utils.Info("Starting LetsNormalizeIt-V2.0 server")
-	utils.Info("Configuration loaded successfully")
+	utils.Info("Auth type: %s", cfg.Auth.Type)
 
-	// Initialize Firebase Auth service
-	authService, err := auth.NewService(&cfg.Firebase)
-	if err != nil {
-		utils.Fatal("Failed to initialize Firebase Auth: %v", err)
-	}
+	var mongoDB *db.MongoDB
+	var err error
 
-	// Initialize MongoDB connection
-	mongodb, err := db.NewMongoDB(&cfg.MongoDB)
+	mongoDB, err = db.NewMongoDB(&cfg.MongoDB)
 	if err != nil {
 		utils.Fatal("Failed to connect to MongoDB: %v", err)
 	}
-	defer mongodb.Close(context.Background())
+	defer mongoDB.Close(context.Background())
 
-	// Initialize Redis connection
-	redis, err := db.NewRedis(&cfg.Redis)
-	if err != nil {
-		utils.Fatal("Failed to connect to Redis: %v", err)
+	var cacheClient cache.Cache
+	if cfg.Cache.Enabled {
+		if cfg.Cache.Type == "redis" {
+			redisCache, err := cache.NewRedisCache(&cfg.Redis, true)
+			if err != nil {
+				utils.Warn("Failed to connect to Redis, falling back to memory cache: %v", err)
+				cacheClient = cache.NewMemoryCache()
+			} else {
+				cacheClient = redisCache
+			}
+		} else {
+			cacheClient = cache.NewMemoryCache()
+		}
+		utils.Info("Cache enabled: %s", cfg.Cache.Type)
+	} else {
+		utils.Info("Cache disabled")
 	}
-	defer redis.Close()
 
-	// Initialize repositories
-	userRepo := user.NewRepository(mongodb)
+	var jwtService *auth.Service
+	if cfg.Auth.Type == "jwt" {
+		jwtService = auth.NewService(
+			cfg.Auth.JWT.Secret,
+			cfg.Auth.JWT.AccessExpiry,
+			cfg.Auth.JWT.RefreshExpiry,
+		)
+	}
 
-	// Initialize services
+	var authService auth.AuthService
+	var userRepo user.Repository
+
+	userRepo = user.NewRepository(mongoDB.Database)
+	authService = auth.NewAuthService(jwtService, userRepo)
+
 	userService := user.NewService(userRepo, authService)
-
-	// Initialize handlers
 	userHandler := user.NewHandler(userService)
 
-	// Initialize rate limiter
 	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
-	// Cleanup old entries every 5 minutes
 	rateLimiter.Cleanup(5 * time.Minute)
 
-	// Setup Gin router
-	router := gin.New() // Use New() instead of Default() to customize middleware
-
-	// Use our custom recovery middleware
+	router := gin.New()
 	router.Use(middleware.Recovery())
-
-	// Use logger middleware
 	router.Use(gin.Logger())
 
-	// Configure CORS
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = []string{cfg.Server.AllowOrigins}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
@@ -88,19 +94,24 @@ func main() {
 	corsConfig.AllowCredentials = true
 	router.Use(cors.New(corsConfig))
 
-	// Apply rate limiting to all routes
 	router.Use(rateLimiter.RateLimit())
 
-	// User authentication routes (requires authentication middleware)
-	userAuth := router.Group("/api/v1/user")
-	userAuth.Use(middleware.AuthMiddleware(authService))
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "healthy",
+			"version": "2.0",
+			"auth":    cfg.Auth.Type,
+			"cache":   cacheClient.IsEnabled(),
+		})
+	})
+
+	authGroup := router.Group("/api/v1/auth")
 	{
-		userAuth.POST("/login", userHandler.Login)
-		userAuth.POST("/login-or-register", userHandler.LoginWithAutoRegister)
-		userAuth.POST("/register", userHandler.RegisterUser)
+		authGroup.POST("/register", userHandler.Register)
+		authGroup.POST("/login", userHandler.Login)
+		authGroup.POST("/refresh", userHandler.RefreshToken)
 	}
 
-	// Public routes
 	public := router.Group("/api/v1")
 	{
 		public.GET("/blogs", func(c *gin.Context) {
@@ -118,157 +129,68 @@ func main() {
 		})
 	}
 
-	// Protected routes (require authentication)
 	protected := router.Group("/api/v1")
-	protected.Use(middleware.AuthMiddleware(authService))
-	{
+	if jwtService != nil {
+		jwtMiddleware := middleware.NewJWTMiddleware(jwtService)
+		protected.Use(jwtMiddleware.Authenticate())
+
 		protected.POST("/blogs", func(c *gin.Context) {
 			uid, _ := c.Get("uid")
 			c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Created blog by user: %s", uid)})
 		})
 
-		protected.POST("/blogs/:id/like", func(c *gin.Context) {
-			id := c.Param("id")
-			uid, _ := c.Get("uid")
-
-			err := userService.ToggleLike(c.Request.Context(), uid.(string), id)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"message": fmt.Sprintf("Blog %s like toggled by user %s", id, uid),
-			})
-		})
-
-		protected.POST("/blogs/:id/bookmark", func(c *gin.Context) {
-			id := c.Param("id")
-			uid, _ := c.Get("uid")
-
-			err := userService.ToggleBookmark(c.Request.Context(), uid.(string), id)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"message": fmt.Sprintf("Blog %s bookmark toggled by user %s", id, uid),
-			})
-		})
+		protected.POST("/blogs/:id/like", userHandler.ToggleLike)
+		protected.POST("/blogs/:id/bookmark", userHandler.ToggleBookmark)
 
 		protected.POST("/comments", func(c *gin.Context) {
 			uid, _ := c.Get("uid")
 			c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Comment created by user: %s", uid)})
 		})
 
-		protected.GET("/user/bookmarks", func(c *gin.Context) {
-			uid, _ := c.Get("uid")
+		protected.GET("/user/bookmarks", userHandler.GetBookmarks)
+		protected.GET("/user/profile", userHandler.GetProfile)
+		protected.PUT("/user/profile", userHandler.UpdateProfile)
 
-			// Get user with bookmarks
-			userData, err := userService.GetUserByID(c.Request.Context(), uid.(string))
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"user":      userData.Email,
-				"bookmarks": userData.Bookmarks,
+		admin := protected.Group("/admin")
+		admin.Use(jwtMiddleware.RequireAdmin())
+		{
+			admin.GET("/users", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"message": "List of users (admin only)"})
 			})
-		})
 
-		protected.GET("/user/profile", func(c *gin.Context) {
-			uid, _ := c.Get("uid")
-
-			userData, err := userService.GetUserByID(c.Request.Context(), uid.(string))
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"id":              userData.ID,
-				"name":            userData.Name,
-				"email":           userData.Email,
-				"photo_url":       userData.PhotoURL,
-				"created_at":      userData.CreatedAt,
-				"bookmarks_count": len(userData.Bookmarks),
-				"likes_count":     len(userData.Likes),
+			admin.POST("/users/:id/set-admin", func(c *gin.Context) {
+				id := c.Param("id")
+				c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Set admin privileges for user: %s", id)})
 			})
-		})
-
-		protected.PUT("/user/profile", func(c *gin.Context) {
-			uid, _ := c.Get("uid")
-
-			var input struct {
-				Name string `json:"name"`
-			}
-
-			if err := c.ShouldBindJSON(&input); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-
-			userData, err := userService.UpdateUserProfile(c.Request.Context(), uid.(string), input.Name)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"id":         userData.ID,
-				"name":       userData.Name,
-				"email":      userData.Email,
-				"photo_url":  userData.PhotoURL,
-				"updated_at": userData.UpdatedAt,
-			})
-		})
+		}
 	}
 
-	// Admin routes
-	admin := router.Group("/api/v1/admin")
-	admin.Use(middleware.AuthMiddleware(authService), middleware.AdminOnly(authService))
-	{
-		admin.GET("/users", func(c *gin.Context) {
-			// In a real implementation, we would call userService.ListUsers()
-			// with pagination parameters
-			c.JSON(http.StatusOK, gin.H{"message": "List of users (admin only)"})
-		})
-
-		// Route to set admin privileges (would require additional service method)
-		admin.POST("/users/:id/set-admin", func(c *gin.Context) {
-			id := c.Param("id")
-			c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Set admin privileges for user: %s", id)})
-		})
-	}
-
-	// Create a context that listens for signals to gracefully shutdown
 	srv := &http.Server{
 		Addr:    ":" + cfg.Server.Port,
 		Handler: router,
 	}
 
-	// Start the server in a goroutine
 	go func() {
+		utils.Info("Server running on port %s", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			utils.Fatal("Failed to start server: %v", err)
 		}
 	}()
 
-	utils.Info("Server running on port %s", cfg.Server.Port)
-
-	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	utils.Info("Shutting down server...")
 
-	// Create a deadline context for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if err := srv.Shutdown(ctx); err != nil {
 		utils.Fatal("Server forced to shutdown: %v", err)
+	}
+
+	if cacheClient != nil {
+		cacheClient.Close()
 	}
 
 	utils.Info("Server exited")

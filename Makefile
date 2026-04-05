@@ -1,10 +1,8 @@
-.PHONY: build run test clean tidy setup env-setup
+.PHONY: build run test clean tidy setup env-setup docker-up docker-down docker-logs
 
-# Setup project for first time
 setup: env-setup tidy
 	@echo "Project setup complete!"
 
-# Setup environment file
 env-setup:
 	@if [ ! -f .env ]; then \
 		cp .env.example .env; \
@@ -14,35 +12,55 @@ env-setup:
 		echo ".env file already exists"; \
 	fi
 
-# Default build target
 build:
 	go build -o bin/server cmd/server/main.go
 
-# Run the server
 run:
 	go run cmd/server/main.go
 
-# Run tests
 test:
-	go test ./...
+	go test ./... -v -race
 
-# Clean build artifacts
+test-coverage:
+	go test ./... -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
+
 clean:
 	rm -rf bin/
+	rm -f coverage.out coverage.html
 
-# Tidy dependencies
 tidy:
 	go mod tidy
 
-# Development with hot reload using air
 dev:
 	@echo "Starting development server with hot reload..."
 	@mkdir -p tmp
 	air
 
-# Build and run (legacy)
-build-run: tidy build run
-
-# Build for production
 prod: tidy
 	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o bin/server cmd/server/main.go
+
+docker-up:
+	cd deploy/docker && docker-compose up -d
+	@echo "Services started. API available at http://localhost:8080"
+
+docker-down:
+	cd deploy/docker && docker-compose down
+
+docker-logs:
+	cd deploy/docker && docker-compose logs -f
+
+docker-build:
+	cd deploy/docker && docker-compose build
+
+docker-clean:
+	cd deploy/docker && docker-compose down -v
+
+lint:
+	golangci-lint run ./...
+
+fmt:
+	go fmt ./...
+
+vet:
+	go vet ./...

@@ -1,0 +1,36 @@
+server:
+  port: "8080"
+  allow_origins: "*"
+
+auth:
+  type: "jwt"
+  jwt:
+    secret: "change-this-in-production"
+    access_expiry: "24h"
+    refresh_expiry: "168h"
+  firebase:
+    credentials_file: "./firebase-credentials.json"
+    project_id: ""
+
+mongodb:
+  uri: "mongodb://localhost:27017"
+  database: "letsnormalizeit"
+
+redis:
+  address: "localhost:6379"
+  password: ""
+  db: 0
+
+cache:
+  enabled: true
+  type: "memory"
+  ttl: "15m"
+  cleanup_interval: "5m"
+
+logger:
+  level: "info"
+  encoding: "json"
+  output_paths:
+    - "stdout"
+  error_output_paths:
+    - "stderr"

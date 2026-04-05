@@ -1,0 +1,21 @@
+server:
+  port: "8080"
+  allow_origins: "*"
+
+auth:
+  type: "jwt"
+  jwt:
+    secret: "${LNI_JWT_SECRET}"
+    access_expiry: "24h"
+    refresh_expiry: "168h"
+
+mongodb:
+  uri: "${LNI_MONGODB_URI}"
+  database: "${LNI_MONGODB_DATABASE}"
+
+cache:
+  enabled: false
+
+logger:
+  level: "info"
+  encoding: "json"
